@@ -39,7 +39,7 @@ data Stats = Stats { sideouts :: Int
                    }
 
 instance Show Stats where
-  show Stats {sideouts=sdts, points=pts, efficiency=eff} = "Stats: sideouts " ++ show sdts ++ " - points " ++ show pts ++ " - efficiency " ++ show eff
+  show Stats {sideouts=sdts, points=pts, efficiency=eff} = "sideouts " ++ show sdts ++ " - points " ++ show pts ++ " - efficiency " ++ show eff
 
 -------- For test ---------------------
 left :: [ScoreSet]
@@ -177,6 +177,12 @@ calcStats xs pos = Stats {sideouts=srv, points=sdt, efficiency=fromIntegral srv/
     srv = length posStats
     sdt = sum $ fst <$> posStats
 
+calcOverall :: [(Int,Int)] -> Stats
+calcOverall xs = Stats {sideouts=srv, points=sdt, efficiency=fromIntegral srv/ fromIntegral sdt}
+  where
+    srv = length xs
+    sdt = sum $ fst <$> xs
+
 printStats :: (Int, Stats) -> IO ()
 printStats (r, s) = putStrLn $ "Rotation " ++ show r ++ " -> " ++ show s
 
@@ -187,9 +193,14 @@ main = do
   case d of
     Nothing -> putStrLn "Unable to parse scoresheet"
     Just s -> do
-      let rawStats = concat $ sideOuts <$> (getServes 'r' <$> processSheet (leftSheet s) (rightSheet s) [])
-      mapM_ printStats $ zip [1..6] (calcStats rawStats <$> [1..6])
-    
+      putStrLn "Sideout stats (the higher efficiency the better):"
+      let soStats = concat $ sideOuts <$> (getServes 'r' <$> processSheet (leftSheet s) (rightSheet s) [])
+      mapM_ printStats $ zip [1..6] (calcStats soStats <$> [1..6])
+      putStrLn $ "Overall sideout: " ++ show(calcOverall soStats)
+      putStrLn "Serve stats (the lower efficiency the better):"
+      let srStats = concat $ sideOuts <$> (getServes 'l' <$> processSheet (leftSheet s) (rightSheet s) [])
+      mapM_ printStats $ zip [1..6] (calcStats srStats <$> [1..6])
+      putStrLn $ "Overall serve: " ++ show (calcOverall srStats)
   -- mapM_ print $ processSheet left right []
   -- print $ processScores (left !! 1) (right !! 1) [startingGame (left !! 1) (right !! 1)] 'x'
   -- let acc = [Game {leftPos = 1, leftScore = 0, rightScore = 0, rightPos = 1},Game {leftPos = 1, leftScore = 0, rightScore = 1, rightPos = 6}]
