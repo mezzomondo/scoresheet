@@ -27,19 +27,31 @@ instance ToJSON ScoreSheet
 instance FromJSON ScoreSheet
 
 data Game = Game { serves :: Char
-                     , leftPos :: Int
-                     , leftScore :: Int
-                     , rightScore :: Int
-                     , rightPos :: Int
-                     } deriving (Show)
+                 , leftPos :: Int
+                 , leftScore :: Int
+                 , rightScore :: Int
+                 , rightPos :: Int
+                 } deriving (Show)
 
-data Stats = Stats { sideouts :: Int
+data Stats = Stats { rotation :: Int
+                   , sideouts :: Int
                    , points :: Int
                    , efficiency :: Float
-                   }
+                   } deriving (Generic)
 
+instance ToJSON Stats
+instance FromJSON Stats
 instance Show Stats where
-  show Stats {sideouts=sdts, points=pts, efficiency=eff} = "sideouts " ++ show sdts ++ " - points " ++ show pts ++ " - efficiency " ++ show eff
+  show Stats {rotation=rot, sideouts=sdts, points=pts, efficiency=eff}
+    | rot == 0 = "Overall -> sideouts " ++ show sdts ++ " - points " ++ show pts ++ " - efficiency " ++ show eff
+    | otherwise = "Rotation " ++ show rot ++ " -> sideouts " ++ show sdts ++ " - points " ++ show pts ++ " - efficiency " ++ show eff
+
+data FinalStats = FinalStats { sideout :: [Stats]
+                             , serve :: [Stats]
+                             } deriving (Generic, Show)
+
+instance ToJSON FinalStats
+instance FromJSON FinalStats
 
 -------- For test ---------------------
 left :: [ScoreSet]
@@ -171,20 +183,35 @@ sideOuts = map rle . group
   where rle xs = (length xs, head xs)
 
 calcStats :: [(Int,Int)] -> Int -> Stats
-calcStats xs pos = Stats {sideouts=srv, points=sdt, efficiency=fromIntegral srv/ fromIntegral sdt}
+calcStats xs pos = Stats { rotation= pos
+                         , sideouts=srv
+                         , points=sdt
+                         , efficiency=fromIntegral srv/ fromIntegral sdt
+                         }
   where
     posStats = filter (\x -> snd x == pos) xs
     srv = length posStats
     sdt = sum $ fst <$> posStats
 
 calcOverall :: [(Int,Int)] -> Stats
-calcOverall xs = Stats {sideouts=srv, points=sdt, efficiency=fromIntegral srv/ fromIntegral sdt}
+calcOverall xs = Stats { rotation=0
+                       , sideouts=srv
+                       , points=sdt
+                       , efficiency=fromIntegral srv/ fromIntegral sdt
+                       }
   where
     srv = length xs
     sdt = sum $ fst <$> xs
 
-printStats :: (Int, Stats) -> IO ()
-printStats (r, s) = putStrLn $ "Rotation " ++ show r ++ " -> " ++ show s
+makeFinalStats :: ScoreSheet -> FinalStats
+makeFinalStats s = 
+  let
+    soStats = concat $ sideOuts <$> (getServes 'r' <$> processSheet (leftSheet s) (rightSheet s) [])
+    _sideout = calcOverall soStats : (calcStats soStats <$> [1..6])
+    srStats = concat $ sideOuts <$> (getServes 'l' <$> processSheet (leftSheet s) (rightSheet s) [])
+    _serve = calcOverall srStats : (calcStats srStats <$> [1..6])
+  in 
+    FinalStats{sideout = _sideout, serve = _serve}
 
 main :: IO ()
 main = do
@@ -192,15 +219,18 @@ main = do
   d <- decode <$> B.readFile f :: IO (Maybe ScoreSheet)
   case d of
     Nothing -> putStrLn "Unable to parse scoresheet"
-    Just s -> do
-      putStrLn "Sideout stats (the higher efficiency the better):"
-      let soStats = concat $ sideOuts <$> (getServes 'r' <$> processSheet (leftSheet s) (rightSheet s) [])
-      mapM_ printStats $ zip [1..6] (calcStats soStats <$> [1..6])
-      putStrLn $ "Overall sideout: " ++ show(calcOverall soStats)
-      putStrLn "Serve stats (the lower efficiency the better):"
-      let srStats = concat $ sideOuts <$> (getServes 'l' <$> processSheet (leftSheet s) (rightSheet s) [])
-      mapM_ printStats $ zip [1..6] (calcStats srStats <$> [1..6])
-      putStrLn $ "Overall serve: " ++ show (calcOverall srStats)
+    Just s -> print $ encode $ makeFinalStats s
+       
+
+--      putStrLn "Sideout stats (the higher efficiency the better):"
+--      let soStats = concat $ sideOuts <$> (getServes 'r' <$> processSheet (leftSheet s) (rightSheet s) [])
+--      let _sideout = calcOverall soStats : (calcStats soStats <$> [1..6])
+--      mapM_ print _sideout
+--      putStrLn "Serve stats (the lower efficiency the better):"
+--      let srStats = concat $ sideOuts <$> (getServes 'l' <$> processSheet (leftSheet s) (rightSheet s) [])
+--      let _serve = calcOverall srStats : (calcStats srStats <$> [1..6])
+--      mapM_ print _serve
+--      print $ encode FinalStats{sideout = _sideout, serve = _serve}
   -- mapM_ print $ processSheet left right []
   -- print $ processScores (left !! 1) (right !! 1) [startingGame (left !! 1) (right !! 1)] 'x'
   -- let acc = [Game {leftPos = 1, leftScore = 0, rightScore = 0, rightPos = 1},Game {leftPos = 1, leftScore = 0, rightScore = 1, rightPos = 6}]
